@@ -1,0 +1,60 @@
+---
+- name: Push declaration block
+  delegate_to: localhost
+  block:
+    - name: Push AS3 Declaration to Host
+      ansible.builtin.uri:
+        url: "https://{{ inventory_hostname }}/mgmt/shared/appsvcs/declare"
+        method: POST
+        body: "{{ lookup('file', '{{ as3_output_file }}', split_lines=False) }}"
+        status_code: 200
+        timeout: 300
+        body_format: json
+        force_basic_auth: true
+        user: "{{ nhid_user }}"
+        password: "{{ nhid_password }}"
+        validate_certs: false
+      environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
+      register: response
+      changed_when: response.status == 200
+
+    - name: Report success
+      ansible.builtin.debug:
+        msg: "Push of the AS3 Declaration to {{ inventory_hostname }} was successful!"
+
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Fail with Error
+      ansible.builtin.fail:
+        msg: "AS3 Push to F5 {{ inventory_hostname }} FAILED!!"
+
+    - meta: end_play
+
+- name: Test VIP for response
+  delegate_to: localhost
+  when: (test_vip | default('no')) == "yes"
+  block:
+    - name: Wait for each VIP to respond
+      ansible.builtin.wait_for:
+        host: "{{ vips.vip_ip | default(vip_address) }}"
+        port: "{{ vips.vip_port }}"
+        timeout: 300
+      loop: "{{ vip_list }}"
+      loop_control:
+        loop_var: vips
+      
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Mark task as failed
+      ansible.builtin.fail:
+        msg: "VIP {{ vip_address }} on port {{ vip_list[0].vip_port }} is NOT reachable after AS3 deployment!"
+
+    - meta: end_play

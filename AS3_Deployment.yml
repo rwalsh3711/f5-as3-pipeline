@@ -1,0 +1,20 @@
+---
+- name: Deploy AS3 configuration to F5
+  hosts: all
+  connection: local
+  gather_facts: false
+  environment:
+    no_proxy: localhost,example.com
+
+  tasks:
+
+    - name: Execute AS3 role against On-Prem Data
+      ansible.builtin.include_role:
+        name: as3_deployment_role
+
+    - name: Set results status to success
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "SUCCESS"
+      delegate_to: localhost
+      run_once: true

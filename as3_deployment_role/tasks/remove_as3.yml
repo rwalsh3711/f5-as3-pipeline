@@ -1,0 +1,28 @@
+- name: Cleanup AS3 declaration from F5
+  delegate_to: localhost
+  block:
+    - name: Remove deployed AS3 declaration from F5
+      ansible.builtin.uri:
+        url: "https://{{ inventory_hostname }}/mgmt/shared/appsvcs/declare/TENANT{{ tenant_id | default('0000') }}"
+        method: DELETE
+        user: "{{ nhid_user }}"
+        password: "{{ nhid_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: 200,204
+      environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
+      register: as3_delete_result
+
+    - name: Success message
+      ansible.builtin.debug:
+        msg: "The partition TENANT{{ tenant_id | default('0000') }} has been removed from {{ inventory_hostname }}"
+
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Fail with error
+      ansible.builtin.fail:
+        msg: "Removal of partition TENANT{{ tenant_id | default('0000') }} from {{ inventory_hostname }} FAILED! Response: {{ as3_delete_result }}"

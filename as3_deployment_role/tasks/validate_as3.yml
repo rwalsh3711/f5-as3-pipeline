@@ -1,0 +1,25 @@
+---
+- name: Generate/Validate AS3 declaration
+  delegate_to: localhost
+  block:
+    - name: Test AS3 declaration
+      ansible.builtin.command: as3ninja validate -d {{ as3_output_file }} --version {{ as3_ver }}
+      register: as3_validate_output
+      changed_when: as3_validate_output.rc != 0
+
+    - name: Report successful validation
+      ansible.builtin.debug:
+        msg: "AS3 validation for {{ as3_output_file | basename }} passed successfully!"
+      when: not as3_validate_output.failed
+
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Fail with Error
+      ansible.builtin.fail:
+        msg: "AS3 validation FAILED!!"
+
+    - meta: end_play

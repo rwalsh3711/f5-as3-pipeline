@@ -1,0 +1,65 @@
+---
+- name: Set path to template_name
+  ansible.builtin.set_fact:
+    as3_template_file: "as3_declaration.j2"
+
+- name: Check for certificates if vip_list is defined
+  when: vip_list is defined
+  delegate_to: localhost
+  run_once: true
+  block:
+    - name: Gather all cert_name values into cert_list (skip undefined/null)
+      ansible.builtin.set_fact:
+        cert_list: >-
+          {{ vip_list
+            | map(attribute='cert_name', default=none)
+            | select('defined')
+            | select('truthy')
+            | list }}
+
+    - name: Pull Certificate Information and create variables
+      ansible.builtin.include_tasks: pull_cert_info.yml
+      loop: "{{ vip_list | selectattr('cert_name', 'defined') | selectattr('cert_name') | list }}"
+      loop_control:
+        loop_var: vip_item
+        index_var: cert_index
+      vars:
+        cert_name: "{{ vip_item.cert_name }}"
+        create_sni: "{{ vip_item.create_sni | default(false) }}"
+      when: cert_list | length > 0
+
+- name: Prep AS3 declaration
+  delegate_to: localhost
+  block:
+    - name: Set AS3 output file
+      ansible.builtin.set_fact:
+        as3_output_file: "TENANT{{ tenant_id }}_{{ inventory_hostname }}_as3.json"
+
+    - name: Generate AS3 declaration
+      ansible.builtin.copy:
+        content: "{{ lookup('template', '{{ as3_template_file }}') | from_yaml | to_nice_json(sort_keys=False) }}"
+        dest: "{{ as3_output_file }}"
+        mode: "0644"
+
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Mark task as failed
+      ansible.builtin.fail:
+        msg: "Unable to generate AS3 declaration for {{ inventory_hostname }}!"
+
+    - meta: end_play
+
+- name: Generate/Validate AS3 Declarations
+  ansible.builtin.include_tasks: validate_as3.yml
+
+- name: Push to AS3 if push_as3 is true
+  ansible.builtin.include_tasks: push_as3.yml
+  when: (push_as3 | default('yes')) == 'yes'
+
+- name: Send email if push_as3 is false
+  ansible.builtin.include_tasks: email_as3.yml
+  when: (push_as3 | default('yes')) == 'no'

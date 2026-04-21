@@ -1,0 +1,74 @@
+{
+  "class": "AS3",
+  "action": "deploy",
+  "persist": true,
+  "declaration": {
+    "class": "ADC",
+    "schemaVersion": "3.40.0",
+    "id": "{{ bigip_data.tenant_id }}",
+    "{{ bigip_data.tenant_id }}": {
+      "class": "Tenant",
+      "{{ bigip_data.f5_env }}": {
+        "class": "Application",
+        "template": "generic",
+{% for vip in bigip_data.vip_list %}
+        "{{ vip.pool_name }}_vs": {
+{% if vip.vip_type == "https" %}
+          "class": "Service_HTTPS",
+          "serverTLS": "{{ vip.cert_name }}_tls_server",
+{% elif vip.vip_type == "http" %}
+          "class": "Service_HTTP",
+{% else %}
+          "class": "Service_Generic",
+{% endif %}
+          "virtualAddresses": ["{{ vip.vip_ip }}"],
+          "virtualPort": {{ vip.vip_port }},
+          "pool": "{{ vip.pool_name }}"
+        },
+{% if vip.vip_type == "https" %}
+        "{{ vip.cert_name }}_tls_server": {
+          "class": "TLS_Server",
+          "certificates": [
+            {
+              "certificate": "{{ vip.cert_name }}_cert"
+            }
+          ]
+        },
+        "{{ vip.cert_name }}_cert": {
+          "class": "Certificate",
+          "certificate": {
+            "bigip": "/Common/{{ vip.cert_name }}.crt"
+          },
+          "privateKey": {
+            "bigip": "/Common/{{ vip.cert_name }}.key"
+          }
+        },
+{% endif %}
+{% endfor %}
+{% for pool in bigip_data.pool_list %}
+        "{{ pool.pool_name }}": {
+          "class": "Pool",
+          "loadBalancingMode": "{{ pool.pool_lb_method }}",
+          "monitors": [
+{% for monitor in pool.pool_monitor %}
+            { "use": "{{ monitor }}" }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+          ],
+          "members": [
+{% for member in pool.pool_members %}
+            {
+              "servicePort": {{ member.member_service_port }},
+              "serverAddresses": ["{{ member.member_addr }}"],
+              "adminState": "{{ member.member_state }}"
+            }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+          ]
+        }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+      }
+    }
+  }
+}

@@ -1,0 +1,94 @@
+- name: Fetch Venafi Certificate
+  delegate_to: localhost
+  run_once: true
+  block:
+    - name: Authenticate to Venafi service to get API Key
+      ansible.builtin.uri:
+        url: "https://{{ venafi_instance }}/vedauth/authorize/oauth"
+        method: POST
+        validate_certs: false
+        return_content: yes
+        follow_redirects: all
+        body_format: json
+        body:
+          username: "{{ ansible_user }}"
+          password: "{{ ansible_password }}"
+          scope: "certificate:manage;configuration:manage"
+          client_id: "F5-BIG-VE-PROD"
+        timeout: 60
+      environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
+      register: auth_resp
+      retries: 3
+      delay: 3
+      until: auth_resp.status == 200
+
+    - name: set api key
+      ansible.builtin.set_fact:
+        api_key: "{{ auth_resp.json.access_token }}"
+
+    - name: Query Certificate Name
+      ansible.builtin.uri:
+        url: "https://{{ venafi_instance }}/vedsdk/certificates?CN={{ cert_name }}"
+        method: GET
+        headers:
+          Content-Type: application/json
+          Authorization: "Bearer {{ api_key }}"
+        validate_certs: false
+        return_content: yes
+        status_code: 200
+      environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
+      register: cert_info
+
+    - name: Cleaning up Venafi json response structure
+      ansible.builtin.set_fact:
+        raw_cert_DN: "{{ cert_info.json.Certificates[0].DN }}"
+        pfx_pass: "Password123"
+
+    - name: Format cert DN
+      ansible.builtin.set_fact:
+        cert_DN: "{{ raw_cert_DN | regex_replace(' ','%20') }}"
+
+    - name: Download Certificate
+      ansible.builtin.uri:
+        url: "https://{{ venafi_instance }}/vedsdk/Certificates/Retrieve"
+        method: POST
+        validate_certs: false
+        headers:
+          Content-Type: "application/json"
+          Authorization: "Bearer {{ api_key }}"
+        body_format: json
+        body:
+          CertificateDN: "{{ raw_cert_DN }}"
+          Format: "Base64"
+          IncludePrivateKey: true
+          Password: "{{ pfx_pass }}"
+      environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
+      register: output
+
+    - name: Set key data to variable
+      ansible.builtin.set_fact:
+        full_cert: "{{ output.json.CertificateData | b64decode }}"
+
+    - name: Extract certificate and key data
+      ansible.builtin.set_fact:
+        "cert_data_{{ cert_index }}": "{{ full_cert | regex_findall('-----BEGIN CERTIFICATE-----[\\s\\S]+?-----END CERTIFICATE-----') }}"
+        "key_data_{{ cert_index }}": "{{ full_cert | regex_findall('-----BEGIN RSA PRIVATE KEY-----[\\s\\S]+?-----END RSA PRIVATE KEY-----') }}"
+        "exp_date_{{ cert_index }}": "{{ cert_info.json.Certificates[0].X509.ValidTo.split('T')[0] |replace('-','') }}"
+        "cert_sans": "{{ cert_info.json.Certificates[0].X509.SANS.DNS | reject('equalto', cert_name) | list }}"
+
+    - name: Generate iRule for SNI and convert output to base64
+      ansible.builtin.set_fact:
+        "sni_irule_{{ cert_index }}": "{{ lookup('template', 'templates/sni_irule.j2') | b64encode }}"
+      when: cert_sans | length > 0 and create_sni
+
+  rescue:
+    - name: Set results status to failure
+      ansible.builtin.set_stats:
+        data:
+          RESULT_STATUS: "FAILURE"
+
+    - name: Mark task as failed
+      ansible.builtin.fail:
+        msg: "Unable to fetch certificate information!"
+
+    - meta: end_play

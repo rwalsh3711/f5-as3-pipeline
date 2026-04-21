@@ -1,0 +1,18 @@
+when HTTP_REQUEST { 
+    set hostname [getfield [HTTP::host] ":" 1] 
+} 
+when SERVER_CONNECTED {
+    switch -glob [string tolower $hostname] { 
+        "{{ cert_name }}" { 
+            SSL::profile /Common/serverssl_{{ cert_name }}_sni_{{ cert_name }} 
+        }
+{% for CERT_SA in cert_sans %}
+        "{{ CERT_SA }}" { 
+            SSL::profile /Common/serverssl_{{ cert_name }}_sni_{{ CERT_SA }}
+        }
+{% endfor %}
+        default { 
+            SSL::profile /Common/serverssl_{{ cert_name }}_sni_true
+        }
+    }
+}
