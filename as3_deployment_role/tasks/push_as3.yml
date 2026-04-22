@@ -11,8 +11,8 @@
         timeout: 300
         body_format: json
         force_basic_auth: true
-        user: "{{ nhid_user }}"
-        password: "{{ nhid_password }}"
+        user: "{{ f5_user }}"
+        password: "{{ f5_password }}"
         validate_certs: false
       environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
       register: response

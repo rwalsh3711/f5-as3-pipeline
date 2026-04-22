@@ -4,5 +4,5 @@ as3_ver: 3.52.0
 
 venafi_instance: venafi.example.com
 
-nhid_user: "{{ f5_user }}"
-nhid_password: "{{ f5_password }}"
+f5_user: "{{ f5_user }}"
+f5_password: "{{ f5_password }}"

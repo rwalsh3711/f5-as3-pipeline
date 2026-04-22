@@ -14,7 +14,7 @@
           username: "{{ ansible_user }}"
           password: "{{ ansible_password }}"
           scope: "certificate:manage;configuration:manage"
-          client_id: "F5-BIG-VE-PROD"
+          client_id: "{{ VENAFI_CLIENT_ID }}"
         timeout: 60
       environment: "{{ UNSET_PROXY if UNSET_PROXY is defined else {} }}"
       register: auth_resp
@@ -42,7 +42,7 @@
     - name: Cleaning up Venafi json response structure
       ansible.builtin.set_fact:
         raw_cert_DN: "{{ cert_info.json.Certificates[0].DN }}"
-        pfx_pass: "Password123"
+        pfx_pass: "{{ lookup('password', '/dev/null length=24 chars=ascii_letters,digits') }}"
 
     - name: Format cert DN
       ansible.builtin.set_fact:
